@@ -1,5 +1,11 @@
+## FuncDef
+- Function: string[] -> unit
+  - The function that is called when the command is executed
+- Description: string
+  - A brief description of the function
+
 ## FuncCommands
-A Map with key of type string, value of type (string[] -> unit)
+A Map with key of type string, value of type FuncDef
 
 ## inputLoop (prefix: string) (commands: inref<FuncCommands>)
 Starts a terminal session
