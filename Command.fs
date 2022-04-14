@@ -15,7 +15,7 @@ module Command =
         let quotes = String.filter (fun c -> c = '\"' ) input
                      |> String.length
         if quotes % 2 = 1 then
-            failwith "Error: Uneven quotes in command"
+            failwith "Uneven quotes in command"
 
         input.Split '\"'
         |> Array.mapi (fun i s -> if i%2 = 1 then [|s|] else s.Split " ")
@@ -31,27 +31,42 @@ module Command =
             else
                 printfn "Error: %s is not a valid command" args.[0]
         with
-        | :? Exception as e -> printfn "%s" e.Message
+        | :? Exception as e -> printfn "Error: %s" e.Message
 
     let internal listCommands (commands: FuncCommands) =
         for c in commands do
-            printfn "%s: %s" c.Key c.Value.Description
+            printfn "-\t%s: %s" c.Key c.Value.Description
+
+    let internal mergeMaps: (FuncCommands -> FuncCommands -> FuncCommands) =
+        Map.fold (fun s k v -> Map.add k v s)
+
+    /// <summary>
+    /// Fails when no arguments are given. Useful for functions that require arguments.
+    /// </summary>
+    /// <param name="aList">The list of arguments</param>
+    let failOnNoArg (aList: string[]) =
+        if aList.Length = 0 then
+            failwith "No arguments given"
 
     /// <summary>Starts a terminal session.</summary>
-    /// <param name="prefix">Prefix before input</param>
-    /// <param name="commands">A map of commands with strings as keys, void functions taking string arrays as values</param>
-    let inputLoop prefix (commands: inref<FuncCommands>) =
+    /// <param name="getPrefix">A function that returns a string that will be printed before each input</param>
+    /// <param name="getCommands">A function that returns a map of commands with strings as keys, void functions taking string arrays as values</param>
+    let inputLoop getPrefix (getCommands: unit -> FuncCommands) =
+        printfn "Type 'help' for a list of available commands"
         let mutable loop = true;
-        let allCommands = FuncCommands [ ("exit", { Function = fun _ -> loop <- false
-                                                    Description = "Exits the terminal"
-                                                  }
-                                         )
-                                       ]
-                          |> Map.fold (fun s k v -> Map.add k v s) commands
+        let baseCommands = FuncCommands [ ("exit", { Function = fun _ -> loop <- false
+                                                     Description = "Exits the terminal"
+                                                   }
+                                          )
+                                        ]
+        // Currying will only run inner functions once, which is undesired
+        let combineWithCommands mapB = mergeMaps (getCommands()) mapB
 
         while loop do
-            printf "%s" prefix
+            printf "%s" (getPrefix ())
             match Console.ReadLine () with
-            | "help" -> Map.add "help" { FuncDef.empty with Description = "Shows this message" } allCommands
+            | "help" -> Map.add "help" { FuncDef.empty with Description = "Shows this message" } baseCommands
+                        |> combineWithCommands
                         |> listCommands
-            | input -> matchWithKeyword input allCommands
+            | input -> combineWithCommands baseCommands
+                       |> matchWithKeyword input
