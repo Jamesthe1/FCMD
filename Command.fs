@@ -24,12 +24,15 @@ module Command =
 
     let internal matchWithKeyword input (commands: FuncCommands) =
         try
+            if input.Equals "" then
+                failwith "No input provided"
+
             let args = splitInput input
 
-            if commands.ContainsKey (args.[0]) then
+            if commands.ContainsKey args.[0] then
                 commands.[args.[0]].Function args.[1..]
             else
-                printfn "Error: %s is not a valid command" args.[0]
+                failwith $"{args.[0]} is not a valid command"
         with
         | :? Exception as e -> printfn "Error: %s" e.Message
 
