@@ -22,6 +22,11 @@ module Command =
         |> Array.concat
         |> Array.filter (fun s -> s <> "")
 
+    let internal printfnWithColor color text =
+        Console.ForegroundColor <- color
+        printfn "%s" text
+        Console.ResetColor()
+
     let internal matchWithKeyword input (commands: FuncCommands) =
         try
             if input.Equals "" then
@@ -34,7 +39,7 @@ module Command =
             else
                 failwith $"{args.[0]} is not a valid command"
         with
-        | :? Exception as e -> printfn "Error: %s" e.Message
+        | :? Exception as e -> printfnWithColor ConsoleColor.Red $"Error: {e.Message}"
 
     let internal listCommands (commands: FuncCommands) =
         for c in commands do
