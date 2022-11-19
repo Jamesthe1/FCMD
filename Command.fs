@@ -1,16 +1,12 @@
 ﻿namespace FCMD
 
 open System
+open System.Text.RegularExpressions
+open Printf
+
+open FCMD.Types
 
 module Command =
-    type FuncDef =
-        { Function: string[] -> unit; Description: string }
-        with
-        static member empty = { Function = fun _ -> ()
-                                Description = ""
-                              }
-    type FuncCommands = Map<string, FuncDef>
-
     let internal splitInput (input: string) =
         let quotes = String.filter (fun c -> c = '\"' ) input
                      |> String.length
@@ -22,10 +18,16 @@ module Command =
         |> Array.concat
         |> Array.filter (fun s -> s <> "")
 
-    let internal printfnWithColor color text =
+    let internal printColor (printFunc: TextWriterFormat<string -> unit> -> string -> unit) color text =
         Console.ForegroundColor <- color
-        printfn "%s" text
+        printFunc "%s" text
         Console.ResetColor()
+
+    let internal printfColor =
+        printColor printf
+
+    let internal printfnColor =
+        printColor printfn
 
     let internal matchWithKeyword input (commands: FuncCommands) =
         try
@@ -39,14 +41,31 @@ module Command =
             else
                 failwith $"{args.[0]} is not a valid command"
         with
-        | :? Exception as e -> printfnWithColor ConsoleColor.Red $"Error: {e.Message}"
+        | :? Exception as e -> printfnColor ConsoleColor.Red $"Error: {e.Message}"
 
     let internal listCommands (commands: FuncCommands) =
-        for c in commands do
-            printfn "-\t%s: %s" c.Key c.Value.Description
+        Map.iter (fun k v -> printf "==\t"
+                             printfColor ConsoleColor.Green k
+                             printfn ": %s" v.Description
+                             Array.iter (fun (name, desc, required) -> printf "-\t\t<"
+                                                                       printfColor ConsoleColor.DarkGreen name
+                                                                       printf ">: "
+                                                                       if required then
+                                                                           printfColor ConsoleColor.Yellow "REQUIRED. "
+                                                                       printfn "%s" desc
+                                        ) v.ArgumentDescriptions
+                             printf "\n"
+                 ) commands
+                
 
     let internal mergeMaps: (FuncCommands -> FuncCommands -> FuncCommands) =
         Map.fold (fun s k v -> Map.add k v s)
+
+    let internal regexMatches str expression =
+        Regex.IsMatch(str, expression, RegexOptions.Compiled ||| RegexOptions.IgnoreCase)
+
+    let internal regexesMatchAny str expressions =
+        Array.fold (fun s e -> s || regexMatches str e) false expressions
 
     /// <summary>
     /// Fails when no arguments are given. Useful for functions that require arguments.
@@ -56,25 +75,43 @@ module Command =
         if aList.Length = 0 then
             failwith "No arguments given"
 
+    /// <summary>
+    /// Fails when the number of arguments are less than the desired count.
+    /// </summary>
+    /// <param name="aList">The list of arguments</param>
+    /// <param name="count">The number of desired arguments</param>
+    let failOnFewerArgs (aList: string[]) count =
+        if aList.Length < count then
+            failwith "Not enough arguments given"
+
     /// <summary>Starts a terminal session.</summary>
     /// <param name="getPrefix">A function that returns a string that will be printed before each input</param>
     /// <param name="getCommands">A function that returns a map of commands with strings as keys, void functions taking string arrays as values</param>
     let inputLoop getPrefix (getCommands: unit -> FuncCommands) =
         printfn "Type 'help' for a list of available commands"
-        let mutable loop = true;
-        let baseCommands = FuncCommands [ ("exit", { Function = fun _ -> loop <- false
-                                                     Description = "Exits the terminal"
-                                                   }
-                                          )
-                                        ]
+
         // Currying will only run inner functions once, which is undesired
         let combineWithCommands mapB = mergeMaps (getCommands()) mapB
+
+        let mutable loop = true;
+        let mutable baseCommands = FuncCommands [ ("exit", { Function = fun _ -> loop <- false
+                                                             Description = "Exits the terminal"
+                                                             ArgumentDescriptions = Array.empty
+                                                           }
+                                                  )
+                                                ]
+        baseCommands <- Map.add "help" { Function = fun args -> combineWithCommands baseCommands
+                                                                |> if args.Length > 0 then
+                                                                       Map.filter (fun k _ -> regexesMatchAny k args)
+                                                                   else
+                                                                       fun c -> c
+                                                                |> listCommands
+                                         Description = "Shows this message"
+                                         ArgumentDescriptions = [| "filters", "Filters commands by name with regexes", false |]
+                                       } baseCommands
 
         while loop do
             printf "%s" (getPrefix ())
             match Console.ReadLine () with
-            | "help" -> Map.add "help" { FuncDef.empty with Description = "Shows this message" } baseCommands
-                        |> combineWithCommands
-                        |> listCommands
             | input -> combineWithCommands baseCommands
                        |> matchWithKeyword input
